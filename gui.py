@@ -19,15 +19,36 @@ def mark_settings_as_saved():
     with open("settings_saved.flag", "w") as f:
         f.write("Settings have been saved.")
 
-def select_directory(var):
-    directory = filedialog.askdirectory()
+def ask_directory_with_network_support(initialdir=None, parent=None, title="Select Directory"):
+    """
+    Use a directory chooser that starts in a network-accessible location when possible.
+
+    On Windows, an empty initial directory defaults to the network root (\\)
+    so UNC paths and mapped drives are visible immediately. Other platforms
+    fall back to the user directory.
+    """
+    if not initialdir:
+        if os.name == "nt":
+            initialdir = "\\\\"
+        else:
+            initialdir = os.path.expanduser("~")
+
+    return filedialog.askdirectory(parent=parent, initialdir=initialdir, title=title)
+
+
+def select_directory(var, parent=None, title="Select Directory"):
+    directory = ask_directory_with_network_support(var.get(), parent=parent, title=title)
     if directory:
         var.set(directory)
 
-def add_subdirectory(parent_dir, sub_dirs_listbox):
-    directory = filedialog.askdirectory(initialdir=parent_dir.get())
+def add_subdirectory(parent_dir, sub_dirs_listbox, parent=None):
+    directory = ask_directory_with_network_support(parent_dir.get(), parent=parent, title="Select Subdirectory")
     if directory:
-        sub_dir_name = os.path.relpath(directory, parent_dir.get())
+        try:
+            sub_dir_name = os.path.relpath(directory, parent_dir.get())
+        except ValueError:
+            # Different drives/UNC roots cannot be relativized; store the absolute path
+            sub_dir_name = os.path.normpath(directory)
         sub_dirs_listbox.insert(tk.END, sub_dir_name)
 
 def remove_subdirectory(sub_dirs_listbox):
@@ -135,19 +156,19 @@ def create_gui():
     label.place(x=10, y=450)
     source_dir_entry = tk.Entry(app, textvariable=source_dir, width=75)
     source_dir_entry.place(x=225, y=450)
-    button = tk.Button(app, text="Browse", command=lambda: select_directory(source_dir))
+    button = tk.Button(app, text="Browse", command=lambda: select_directory(source_dir, parent=app, title="Select Parent Directory"))
     button.place(x=700, y=450)
 
     tk.Label(app, text="Subdirectories:").place(x=10, y=530)
     sub_dirs_listbox = tk.Listbox(app, selectmode=tk.MULTIPLE, width=75, height=5)
     sub_dirs_listbox.place(x=225, y=500)
-    tk.Button(app, text="Add", command=lambda: add_subdirectory(source_dir, sub_dirs_listbox)).place(x=700, y=500)
+    tk.Button(app, text="Add", command=lambda: add_subdirectory(source_dir, sub_dirs_listbox, parent=app)).place(x=700, y=500)
     tk.Button(app, text="Remove", command=lambda: remove_subdirectory(sub_dirs_listbox)).place(x=700, y=535)
 
     tk.Label(app, text="Destination Directory:").place(x=10, y=600)
     dest_dir_entry = tk.Entry(app, textvariable=dest_dir, width=75)
     dest_dir_entry.place(x=225, y=600)
-    tk.Button(app, text="Browse", command=lambda: select_directory(dest_dir)).place(x=700, y=600)
+    tk.Button(app, text="Browse", command=lambda: select_directory(dest_dir, parent=app, title="Select Destination Directory")).place(x=700, y=600)
 
     tk.Label(app, text="Backup Frequency:").place(x=10, y=650)
     backup_frequency = tk.StringVar(value=config.get('backup_frequency', 'Daily'))
