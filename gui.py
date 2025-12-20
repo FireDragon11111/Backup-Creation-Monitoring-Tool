@@ -82,19 +82,29 @@ def create_gui():
     icon_path = os.path.join(os.path.dirname(sys.executable), 'icon.ico') if getattr(sys, 'frozen', False) else 'icon.ico'
     decode_base64_to_file(icon_base64, icon_path)
     app.iconbitmap(icon_path)
+    
+    def update_entry(*args):
+        backup_time.delete(0, tk.END)
+        backup_time.insert(0, f"{hours.get()}")
 
     def save_settings():
         sub_dirs_list = [sub_dirs_listbox.get(i) for i in range(sub_dirs_listbox.size())]
+        
+        # Helper function to safely convert entry values to integers.
+        def safe_int(entry, default):
+            text = entry.get().strip()
+            return int(text) if text.isdigit() else default
+
         config = {
-            'backup_frequency': backup_frequency.get(),
-            'backup_time': backup_time.get(),
-            'backup_day_of_week': backup_day_of_week.get(),
-            'backup_day_of_month': calendar.get_date(),
-            'zip_files_kept': zip_files_kept.get(),
-            'interval_days': interval_days.get(),
-            'interval_hours': interval_hours.get(),
-            'interval_minutes': interval_minutes.get(),
-            'interval_seconds': interval_seconds.get(),
+            'backup_frequency': backup_frequency.get() or "Daily",
+            'backup_time': backup_time.get() or "00:00",
+            'backup_day_of_week': backup_day_of_week.get() or "Sunday",
+            'backup_day_of_month': calendar.get_date() or "1",
+            'zip_files_kept': safe_int(zip_files_kept, 3),
+            'interval_days': safe_int(interval_days, 0),
+            'interval_hours': safe_int(interval_hours, 0),
+            'interval_minutes': safe_int(interval_minutes, 0),
+            'interval_seconds': safe_int(interval_seconds, 0),
             'source_dir': source_dir.get(),
             'dest_dir': dest_dir.get(),
             'sub_dirs': sub_dirs_list,
@@ -164,6 +174,11 @@ def create_gui():
     backup_time = tk.Entry(app, width=10)
     backup_time.place(x=225, y=700)
     backup_time.insert(0, config.get('backup_time', ''))
+
+    hour_options = [f"{i:02d}:00" for i in range(24)]
+    hours = ttk.Combobox(app, values=hour_options, width=7)
+    hours.place(x=310, y=700)
+    hours.bind("<<ComboboxSelected>>", update_entry)
 
     backup_day_of_week = tk.StringVar(value=config.get('backup_day_of_week', ''))
     day_options = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"]
@@ -255,6 +270,7 @@ def create_gui():
 
         backup_frequency.set('Daily')
         backup_time.delete(0, tk.END)
+        hours.set('')
         backup_day_of_week.set('')
         calendar.selection_clear()
         zip_files_kept.delete(0, tk.END)
@@ -269,20 +285,38 @@ def create_gui():
         config_exists = os.path.exists(f"{CONFIG_FILE}_{profile}.json")
         if config_exists:
             config = load_config(profile)
+
             backup_frequency.set(config.get('backup_frequency', 'Daily'))
-            backup_time.insert(0, config.get('backup_time', ''))
-            backup_day_of_week.set(config.get('backup_day_of_week', ''))
+            backup_time_str = config.get('backup_time', '')
+            backup_frequency_value = config.get('backup_frequency', 'Daily')
 
-            backup_day_of_month_value = config.get('backup_day_of_month', '01/01/2024')
-            if isinstance(backup_day_of_month_value, str):
-                day_of_month_str = backup_day_of_month_value.split('/')[0]
-                day_of_month = int(day_of_month_str)
-            else:
-                day_of_month = int(backup_day_of_month_value)
+            if backup_frequency_value == 'Daily':
+                backup_time.insert(0, backup_time_str)
+                if backup_time_str:
+                    backup_hour = backup_time_str.split(':')[0] + ":00"
+                    hours.set(backup_hour)
+            
+            elif backup_frequency_value == 'Weekly':
+                backup_day_of_week.set(config.get('backup_day_of_week', ''))
+                backup_time.insert(0, backup_time_str)
+                if backup_time_str:
+                    backup_hour = backup_time_str.split(':')[0] + ":00"
+                    hours.set(backup_hour)
+            
+            elif backup_frequency_value == 'Monthly':
+                backup_day_of_month_value = config.get('backup_day_of_month', '01/01/2024')
+                if isinstance(backup_day_of_month_value, str):
+                    day_of_month_str = backup_day_of_month_value.split('/')[0]
+                    if day_of_month_str:
+                        day_of_month = int(day_of_month_str)
+                    else:
+                        day_of_month = 1
+                else:
+                    day_of_month = int(backup_day_of_month_value)
 
-            current_date = datetime.datetime.now()
-            valid_date = current_date.replace(day=day_of_month)
-            calendar.selection_set(valid_date)
+                current_date = datetime.datetime.now()
+                valid_date = current_date.replace(day=day_of_month)
+                calendar.selection_set(valid_date)
 
             zip_files_kept.insert(0, config.get('zip_files_kept', ''))
             interval_days.insert(0, config.get('interval_days', ''))
@@ -293,6 +327,7 @@ def create_gui():
             dest_dir.set(config.get('dest_dir', ''))
             for sub_dir in config.get('sub_dirs', []):
                 sub_dirs_listbox.insert(tk.END, sub_dir)
+            
             monitoring_states[profile] = config.get('monitoring_state', False)
         else:
             start_button.config(state=tk.DISABLED)
